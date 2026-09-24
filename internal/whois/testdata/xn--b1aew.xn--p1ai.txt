@@ -1,0 +1,22 @@
+% TCI Whois Service. Terms of use:
+% https://tcinet.ru/documents/whois_ru_rf.pdf (in Russian)
+% https://tcinet.ru/documents/whois_su.pdf (in Russian)
+
+domain:        XN--B1AEW.XN--P1AI
+nserver:       ns3-l2.nic.ru.
+nserver:       ns4-cloud.nic.ru.
+nserver:       ns4-l2.nic.ru.
+nserver:       ns8-cloud.nic.ru.
+nserver:       ns8-l2.nic.ru.
+state:         REGISTERED, DELEGATED, VERIFIED
+org:           
+taxpayer-id:   
+registrar:     RUCENTER-RF
+admin-contact: https://www.nic.ru/whois
+created:       2009-11-24T15:04:00Z
+paid-till:     2026-11-24T15:04:00Z
+free-date:     2026-12-25
+source:        TCI
+
+Last updated on 2026-09-24T07:43:01Z
+

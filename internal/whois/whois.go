@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caarlos0/domain_exporter/internal/client"
 	"github.com/domainr/whois"
+	"github.com/metanovii/domain_exporter/v2/internal/client"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/net/idna"
 )
@@ -63,7 +63,7 @@ var (
 	}
 
 	// nolint: lll
-	expiryRE = regexp.MustCompile(`(?i)(` + strings.Join([]string{
+	expiryRE = regexp.MustCompile(`(?im)^\s*\[?(` + strings.Join([]string{
 		"Registrar Registration Expiration Date",
 		"expire-date",
 		"Valid Until",
@@ -85,8 +85,6 @@ var (
 		"Exp date",
 		"Domain expired\\.*:",
 		"OK-UNTIL",
-		"registered",
-		`Registered:\t\t`,
 	}, "|") + `)\]?:?\s?(.*)`)
 	registrarRE = regexp.MustCompile(`(?i)Registrar WHOIS Server: (.*)`)
 )
@@ -104,6 +102,15 @@ func (c whoisClient) ExpireTime(ctx context.Context, domain string, host string)
 	if err != nil {
 		return time.Now(), err
 	}
+	date, err := parseExpiry(body)
+	if err != nil {
+		return time.Now(), err
+	}
+	log.Debug().Msgf("domain %q will expire at %q", domain, date.String())
+	return date, nil
+}
+
+func parseExpiry(body string) (time.Time, error) {
 	result := expiryRE.FindStringSubmatch(body)
 	if len(result) < 2 {
 		return time.Now(), fmt.Errorf("could not parse whois response: %q", body)
@@ -111,7 +118,6 @@ func (c whoisClient) ExpireTime(ctx context.Context, domain string, host string)
 	dateStr := strings.TrimSpace(result[2])
 	for _, format := range formats {
 		if date, err := time.Parse(format, dateStr); err == nil {
-			log.Debug().Msgf("domain %q will expire at %q", domain, date.String())
 			return date, nil
 		}
 	}
@@ -161,10 +167,24 @@ func (c whoisClient) request(ctx context.Context, domain, host string) (string, 
 	}
 
 	log.Debug().Msgf("found whois host %s for domain %s", foundHost, domain)
-	if newBody, err := c.request(ctx, domain, foundHost); err == nil {
-		return newBody, err
+	newBody, err := c.request(ctx, domain, foundHost)
+	if err != nil {
+		log.Debug().Msgf("ignoring error from %s for %s", foundHost, domain)
+		return body, nil
 	}
+	return preferParsable(body, newBody), nil
+}
 
-	log.Debug().Msgf("ignoring error from %s for %s", foundHost, domain)
-	return body, nil
+// preferParsable returns the registrar's answer if it has an expiry date,
+// the registry's answer otherwise. Registrars sometimes answer
+// "No matching domain found." for domains the registry knows.
+func preferParsable(registry, registrar string) string {
+	if _, err := parseExpiry(registrar); err == nil {
+		return registrar
+	}
+	if _, err := parseExpiry(registry); err == nil {
+		log.Debug().Msg("registrar answer has no expiry date, using the registry answer")
+		return registry
+	}
+	return registrar
 }

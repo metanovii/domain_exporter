@@ -1,4 +1,4 @@
-module github.com/caarlos0/domain_exporter
+module github.com/metanovii/domain_exporter/v2
 
 go 1.26
 
@@ -6,7 +6,6 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/domainr/whois v0.1.0
 	github.com/openrdap/rdap v0.9.1
-	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/zerolog v1.35.1
 	golang.org/x/net v0.55.0

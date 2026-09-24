@@ -3,11 +3,18 @@ package rdap
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/caarlos0/domain_exporter/internal/client"
+	"github.com/metanovii/domain_exporter/v2/internal/client"
 	"github.com/openrdap/rdap"
+	"github.com/openrdap/rdap/bootstrap"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/net/idna"
 )
 
 // nolint: gochecknoglobals
@@ -45,23 +52,100 @@ var (
 	}
 )
 
-type rdapClient struct{}
-
-// NewClient returns a new RDAP client.
-func NewClient() client.Client {
-	return rdapClient{}
+// Client is an RDAP client. Its RDAP server overrides can be replaced at
+// runtime with SetServers.
+type Client struct {
+	servers *atomic.Pointer[map[string]*url.URL]
+	// One client for the whole process, so the IANA bootstrap registry is
+	// downloaded once and then kept in its cache (24h by default).
+	// openrdap's client is not safe for concurrent use, hence the mutex.
+	mu     *sync.Mutex
+	client *rdap.Client
 }
 
-func (rdapClient) ExpireTime(ctx context.Context, domain string, host string) (time.Time, error) {
+var _ client.Client = (*Client)(nil)
+
+// NewClient returns a new RDAP client.
+// servers maps a TLD or domain suffix (e.g. "kz") to the RDAP server base URL
+// to use instead of the IANA bootstrap registry.
+func NewClient(servers map[string]string) (*Client, error) {
+	c := &Client{
+		servers: &atomic.Pointer[map[string]*url.URL]{},
+		mu:      &sync.Mutex{},
+		client:  &rdap.Client{HTTP: &http.Client{}, Bootstrap: &bootstrap.Client{}},
+	}
+	if err := c.SetServers(servers); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// SetServers validates and replaces the RDAP server overrides.
+func (c *Client) SetServers(servers map[string]string) error {
+	parsed := make(map[string]*url.URL, len(servers))
+	for suffix, server := range servers {
+		key, err := normalize(suffix)
+		if err != nil {
+			return fmt.Errorf("invalid rdap server suffix %q: %w", suffix, err)
+		}
+		u, err := url.Parse(server)
+		if err != nil {
+			return fmt.Errorf("invalid rdap server url for %q: %w", suffix, err)
+		}
+		if u.Scheme != "https" && u.Scheme != "http" || u.Host == "" {
+			return fmt.Errorf("invalid rdap server url for %q: %q", suffix, server)
+		}
+		parsed[key] = u
+	}
+	c.servers.Store(&parsed)
+	return nil
+}
+
+func normalize(name string) (string, error) {
+	return idna.ToASCII(strings.Trim(strings.ToLower(name), "."))
+}
+
+// server returns the configured RDAP server for the longest matching
+// suffix of domain, or nil to use the IANA bootstrap registry.
+func (c *Client) server(domain string) *url.URL {
+	servers := *c.servers.Load()
+	if len(servers) == 0 {
+		return nil
+	}
+	name, err := normalize(domain)
+	if err != nil {
+		return nil
+	}
+	for {
+		if u, ok := servers[name]; ok {
+			return u
+		}
+		i := strings.IndexByte(name, '.')
+		if i < 0 {
+			return nil
+		}
+		name = name[i+1:]
+	}
+}
+
+// ExpireTime implements client.Client.
+func (c *Client) ExpireTime(ctx context.Context, domain string, host string) (time.Time, error) {
 	log.Debug().Msgf("trying rdap client for %s", domain)
 	req := &rdap.Request{
 		Type:  rdap.DomainRequest,
 		Query: domain,
 	}
+	if server := c.server(domain); server != nil {
+		log.Debug().Msgf("using rdap server %s for %s", server, domain)
+		// openrdap modifies the server URL in place, so pass a copy.
+		u := *server
+		req = req.WithServer(&u)
+	}
 	req = req.WithContext(ctx)
 
-	client := &rdap.Client{}
-	resp, err := client.Do(req)
+	c.mu.Lock()
+	resp, err := c.client.Do(req)
+	c.mu.Unlock()
 	if err != nil {
 		return time.Now(), fmt.Errorf("failed to do rdap request: %w", err)
 	}

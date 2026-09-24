@@ -1,0 +1,28 @@
+# Example Prometheus scrape configuration for domain_exporter.
+scrape_configs:
+  # Domains from the exporter configuration file. /metrics only reports the
+  # results of the background checks, so the scrape is fast.
+  - job_name: domain
+    scrape_interval: 2m
+    scrape_timeout: 60s
+    static_configs:
+      - targets:
+          - localhost:9222
+
+  # On-demand probes: every scrape does a fresh lookup of each target.
+  # Keep the interval long to stay below the whois servers' rate limits.
+  - job_name: domain-probe
+    scrape_interval: 1h
+    scrape_timeout: 30s
+    metrics_path: /probe
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: localhost:9222
+    static_configs:
+      - targets:
+          - example.com
+          - example.org

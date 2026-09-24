@@ -2,10 +2,13 @@ package safeconfig
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
@@ -117,4 +120,22 @@ domains:
 			}
 		})
 	}
+}
+
+func TestExpiryDate(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.yaml")
+	require.NoError(t, os.WriteFile(good, []byte("domains:\n- name: example.eu\n  expiry_date: 2027-09-01\n- example.com\n"), 0o600))
+	cfg, err := New(good)
+	require.NoError(t, err)
+	d, ok := cfg.Domains[0].Expiry()
+	require.True(t, ok)
+	require.Equal(t, time.Date(2027, 9, 1, 0, 0, 0, 0, time.UTC), d)
+	_, ok = cfg.Domains[1].Expiry()
+	require.False(t, ok)
+
+	bad := filepath.Join(dir, "bad.yaml")
+	require.NoError(t, os.WriteFile(bad, []byte("domains:\n- name: example.eu\n  expiry_date: 01.09.2027\n"), 0o600))
+	_, err = New(bad)
+	require.ErrorContains(t, err, "invalid expiry_date")
 }

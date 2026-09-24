@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
@@ -12,6 +13,21 @@ import (
 type Domain struct {
 	Name string `yaml:"name"`
 	Host string `yaml:"host,omitempty"`
+	// ExpiryDate (YYYY-MM-DD) is used instead of a lookup, for domains whose
+	// registry publishes the date neither in whois nor in RDAP.
+	ExpiryDate string `yaml:"expiry_date,omitempty"`
+}
+
+// expiryDateLayout is the format of Domain.ExpiryDate.
+const expiryDateLayout = time.DateOnly
+
+// Expiry returns the parsed ExpiryDate and whether it is set.
+func (d Domain) Expiry() (time.Time, bool) {
+	if d.ExpiryDate == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(expiryDateLayout, d.ExpiryDate)
+	return t, err == nil
 }
 
 type domainAlias Domain
@@ -32,7 +48,8 @@ func (a *Domain) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 type SafeConfig struct {
-	Domains []Domain `yaml:"domains"`
+	Domains     []Domain          `yaml:"domains"`
+	RDAPServers map[string]string `yaml:"rdap_servers"`
 }
 
 func New(pathToFile string) (SafeConfig, error) {
@@ -65,6 +82,19 @@ func (cfg *SafeConfig) Reload(pathToFile string) error {
 	err = yaml.Unmarshal(yamlFile, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal file: %w", err)
+	}
+
+	for _, d := range cfg.Domains {
+		if d.ExpiryDate == "" {
+			continue
+		}
+		t, err := time.Parse(expiryDateLayout, d.ExpiryDate)
+		if err != nil {
+			return fmt.Errorf("invalid expiry_date %q of %s, expected YYYY-MM-DD: %w", d.ExpiryDate, d.Name, err)
+		}
+		if t.Before(time.Now()) {
+			log.Warn().Msgf("expiry_date %s of %s is in the past", d.ExpiryDate, d.Name)
+		}
 	}
 
 	log.Debug().Msgf("config file is loaded:\n %s", *cfg)

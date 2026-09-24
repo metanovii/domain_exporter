@@ -1,0 +1,14 @@
+# Example configuration for domain_exporter --config=domains.yml
+
+# Optional: RDAP servers for TLDs (or domain suffixes) missing from the IANA
+# bootstrap registry. The longest matching suffix wins.
+rdap_servers:
+  kz: https://rdap.nic.kz/
+
+domains:
+  - example.com
+  - example.kz               # looked up via the RDAP server above
+  - name: example.es
+    host: whois.nic.es       # custom whois server
+  - name: example.eu
+    expiry_date: 2027-09-01  # registry publishes no date: no lookup

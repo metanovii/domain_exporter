@@ -1,11 +1,6 @@
 ALERT DomainExpiringLessThen30Days
-  IF (
-       min_over_time(domain_expiry_days[1h]) > 5
-       AND
-       max_over_time(domain_expiry_days[1h]) < 30
-     )
-     UNLESS
-     absent_over_time(domain_expiry_days[1h])
+  IF domain_expiry_days < 30 > 5
+     AND ON(domain) domain_probe_success == 1
   FOR 1h
   LABELS {
     severity = "warning",
@@ -16,9 +11,8 @@ ALERT DomainExpiringLessThen30Days
   }
 
 ALERT DomainExpiringLessThen5Days
-  IF max_over_time(domain_expiry_days[1h]) <= 5
-     UNLESS
-     absent_over_time(domain_expiry_days[1h])
+  IF domain_expiry_days <= 5
+     AND ON(domain) domain_probe_success == 1
   FOR 1h
   LABELS {
     severity = "page",
@@ -37,4 +31,15 @@ ALERT DomainProbeFailure
   ANNOTATIONS {
     description = "Domain {{ $labels.domain }} is not valid. Cannot probe",
     summary = "{{ $labels.domain }}: cannot probe",
+  }
+
+ALERT DomainExporterDown
+  IF up{job="domain"} == 0
+  FOR 10m
+  LABELS {
+    severity = "warning",
+  }
+  ANNOTATIONS {
+    description = "domain_exporter on {{ $labels.instance }} is down",
+    summary = "{{ $labels.instance }}: domain_exporter is down",
   }

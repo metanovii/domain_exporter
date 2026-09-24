@@ -1,15 +1,12 @@
 groups:
 - name: domain
   rules:
+  # domain_expiry_days is -1 when the check failed, so every expiry rule is
+  # filtered with domain_probe_success == 1. Failed checks have their own rule.
   - alert: DomainExpiringLessThen30Days
     expr: >
-      (
-        min_over_time(domain_expiry_days[1h]) > 5
-        and
-        max_over_time(domain_expiry_days[1h]) < 30
-      )
-      unless
-      absent_over_time(domain_expiry_days[1h])
+      domain_expiry_days < 30 > 5
+      and on(domain) domain_probe_success == 1
     for: 1h
     labels:
       severity: warning
@@ -19,9 +16,8 @@ groups:
 
   - alert: DomainExpiringLessThen5Days
     expr: >
-      max_over_time(domain_expiry_days[1h]) <= 5
-      unless
-      absent_over_time(domain_expiry_days[1h])
+      domain_expiry_days <= 5
+      and on(domain) domain_probe_success == 1
     for: 1h
     labels:
       severity: page
@@ -37,3 +33,12 @@ groups:
     annotations:
       description: 'Domain {{ $labels.domain }} is not valid. Cannot probe'
       summary: '{{ $labels.domain }}: cannot probe'
+
+  - alert: DomainExporterDown
+    expr: up{job="domain"} == 0
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      description: 'domain_exporter on {{ $labels.instance }} is down'
+      summary: '{{ $labels.instance }}: domain_exporter is down'
