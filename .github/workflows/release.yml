@@ -22,6 +22,9 @@ jobs:
           go-version-file: go.mod
       - run: go test -race -short ./...
       - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
+      # The default "docker" driver cannot push multi-platform images with
+      # SBOM attestations, which dockers_v2 adds.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
